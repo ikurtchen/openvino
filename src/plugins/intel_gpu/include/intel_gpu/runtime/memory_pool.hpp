@@ -29,12 +29,14 @@ using memory_ptr = std::shared_ptr<memory>;
 struct memory_user {
     primitive_id _id;
     uint32_t _network_id;
+    size_t   _offset;
+    size_t   _size;
 
-    memory_user(primitive_id id, uint32_t network_id)
-        : _id(id), _network_id(network_id) {}
+    memory_user(primitive_id id, uint32_t network_id, size_t size, size_t offset = 0)
+        : _id(id), _network_id(network_id), _size(size), _offset(offset) {}
 
     friend std::ostream& operator<<(std::ostream& os, const memory_user& memory_user) {
-        os << memory_user._id << "(" << memory_user._network_id << ")";
+        os << memory_user._id << "(" << memory_user._network_id << ", offset:" << memory_user._offset <<")";
         return os;
     }
 };
@@ -91,7 +93,7 @@ class memory_pool {
     memory_pool();
 
     memory_ptr alloc_memory(const layout& layout, allocation_type type, bool reset = true);
-    static bool has_conflict(const memory_set&, const std::set<primitive_id>&, uint32_t network_id);
+    static std::vector<primitive_id> get_conflicts(const memory_set&, const std::set<primitive_id>&, uint32_t network_id);
 
     std::multimap<uint64_t, memory_record> _non_padded_pool;
     std::map<layout, std::list<memory_record>, padded_pool_comparer> _padded_pool;

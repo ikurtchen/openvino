@@ -30,7 +30,7 @@ memory::ptr memory_pool::alloc_memory(const layout& layout, allocation_type type
 
 memory_pool::~memory_pool() {}
 
-bool memory_pool::has_conflict(const memory_set& a,
+std::vector<primitive_id> memory_pool::get_conflicts(const memory_set& a,
                                const std::set<primitive_id>& b,
                                uint32_t b_network_id) {
     std::set<primitive_id> a_same_network;
@@ -46,7 +46,7 @@ bool memory_pool::has_conflict(const memory_set& a,
                      b.begin(),
                      b.end(),
                      std::back_inserter(intersection));
-    return !intersection.empty();
+    return intersection;
 }
 
 void memory_pool::release_memory(memory* mem, const primitive_id& id, uint32_t network_id) {
@@ -62,7 +62,11 @@ void memory_pool::release_memory(memory* mem, const primitive_id& id, uint32_t n
             if (it->second._network_id == network_id &&
                 it->second._type == type &&
                 it->second._memory.get() == mem) {
-                auto user_it = it->second._users.find({ id, network_id });
+                auto user_it = it->second._users.begin();
+                for (; user_it != it->second._users.end(); user_it ++) {
+                    if (user_it->_id == id && user_it->_network_id == network_id)
+                        break;
+                }
 
                 // normally there should be only one entry
                 if (user_it != it->second._users.end()) {
@@ -91,7 +95,11 @@ void memory_pool::release_memory(memory* mem, const primitive_id& id, uint32_t n
                 if (list_itr->_memory.get() == mem &&
                     list_itr->_network_id == network_id &&
                     list_itr->_type == type) {
-                    auto user_it = list_itr->_users.find({ id, network_id });
+                    auto user_it = list_itr->_users.begin();
+                    for (; user_it != list_itr->_users.end(); user_it ++) {
+                        if (user_it->_id == id && user_it->_network_id == network_id)
+                            break;
+                    }
 
                     // normally there should be only one entry
                     if (user_it != list_itr->_users.end()) {
@@ -121,31 +129,105 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
                                                   uint32_t network_id,
                                                   const std::set<primitive_id>& restrictions,
                                                   allocation_type type) {
+    GPU_DEBUG_GET_INSTANCE(debug_config);
     auto it = _non_padded_pool.lower_bound(layout.bytes_count());
     while (it != _non_padded_pool.end()) {
-        if (it->second._network_id == network_id &&
-            it->second._type == type &&
-            it->second._memory->get_layout().format != format::fs_b_yx_fsv32 &&
-            layout.format != format::fs_b_yx_fsv32 &&
-            ((layout.format != format::b_fs_yx_fsv32 && layout.format != format::b_fs_zyx_fsv32) ||
-             (layout.feature() % 32 == 0)) &&
-            !has_conflict(it->second._users, restrictions, network_id)) {
-            it->second._users.insert(memory_user(id, network_id));
+        auto conflicts = get_conflicts(it->second._users, restrictions, network_id);
+        bool may_reuse = (it->second._network_id == network_id) && it->second._type == type &&
+                            it->second._memory->get_layout().format != format::fs_b_yx_fsv32 &&
+                            layout.format != format::fs_b_yx_fsv32 &&
+                            ((layout.format != format::b_fs_yx_fsv32 && layout.format != format::b_fs_zyx_fsv32) ||
+                            (layout.feature() % 32 == 0));
+
+        if (may_reuse && conflicts.empty()) {//no conflict, reuse directly
+            GPU_DEBUG_IF(debug_config->verbose >= 2) {
+                if (type == allocation_type::usm_device) {
+                    GPU_DEBUG_COUT << id << "(" << layout.bytes_count() << ")" << "reuse memory (" << it->second._memory << ") with size:"<< it->second._memory->get_layout().bytes_count() << std::endl;
+                }
+            }
+
+            it->second._users.insert(memory_user(id, network_id, layout.bytes_count(), 0));
             auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout);
             return ret_mem;
-        } else {
+        }
+        else if (may_reuse) {//may resue, need to figure out whether it has available slot
+            std::vector<std::vector<size_t>> intervals;
+            for (auto conflict : conflicts) {
+                for (auto &user : it->second._users) {
+                    if (user._id == conflict) {
+                        intervals.push_back({user._offset, user._offset + user._size});
+                    }
+                }
+            }
+            //merge overlapped intervals
+            sort(intervals.begin(), intervals.end());
+            std::vector<std::vector<size_t>> res = {intervals[0]};
+            for (int i = 1; i < intervals.size(); i++) {
+                if (res.back()[1] >= intervals[i][0]) {
+                    res.back()[1] = std::max(res.back()[1], intervals[i][1]);
+                    continue;
+                } else {
+                    res.push_back(intervals[i]);
+                }
+            }
+
+            std::vector<std::vector<size_t>> availables = {};
+            if (res[0][0] > 0)
+                availables.push_back({res[0][0], 0 });
+            for (int i = 0; i < res.size() - 1; i++) {
+                availables.push_back({res[i+1][0] - res[i][1], res[i][1]});
+            }
+            if (res.back()[1] < it->second._memory->get_layout().bytes_count()) {
+                availables.push_back({it->second._memory->get_layout().bytes_count() - res.back()[1], res.back()[1]});
+            }
+
+            sort(availables.begin(), availables.end());
+
+            size_t offset = 0; int i = 0;
+            for (; i < availables.size(); i ++) {
+                if (availables[i][0] >= layout.bytes_count()) {
+                    offset = availables[i][1];
+                    break;
+                }
+            }
+
+            if ( i == availables.size()) {
+                ++it;
+                continue;
+            }
+
+            GPU_DEBUG_IF(debug_config->verbose >= 2) {
+                if (type == allocation_type::usm_device) {
+                    GPU_DEBUG_COUT << id << "(" << layout.bytes_count() << ")" << "reuse memory (ptr:" << it->second._memory <<", size" << it->second._memory->get_layout().bytes_count() << ") with offset:"<< offset << std::endl;
+                }
+            }
+
+            it->second._users.insert(memory_user(id, network_id, layout.bytes_count(), offset));
+            auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout, offset);
+            return ret_mem;
+
+        }
+        else { //impossible to resue the memory
             ++it;
         }
     }
-    GPU_DEBUG_GET_INSTANCE(debug_config);
-    GPU_DEBUG_IF(debug_config->verbose >= 2) {
-        GPU_DEBUG_COUT << "[" << id << ": output]" << std::endl;
+
+    //TODO: temporary workround for insufficient memory by Renzhi
+    auto allocated_memory = _engine->get_used_device_memory(type);
+    if (type == allocation_type::usm_device &&
+         allocated_memory + layout.bytes_count() > _engine->get_device_info().max_global_mem_size) {
+            GPU_DEBUG_COUT << "Warning: No available device memory for " << id << ", will use system memory instead." << std::endl;
+        return nullptr;
     }
     // didn't find anything for you? create new resource
     auto mem = alloc_memory(layout, type);
     {
         _non_padded_pool.emplace(layout.bytes_count(),
-                                 memory_record({{id, network_id}}, mem, network_id, type));
+                                 memory_record({{id, network_id, layout.bytes_count(), 0}}, mem, network_id, type));
+    }
+
+    GPU_DEBUG_IF(debug_config->verbose >= 2) {
+        GPU_DEBUG_COUT << "[non-padded, " << id  << "(mem:" << mem  << ",type:" << type << ")"<< ": output]" << std::endl;
     }
     return mem;
 }
@@ -159,6 +241,7 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
 
     if (first_level_cache != _padded_pool.end()) {
         for (auto& rec_list : first_level_cache->second) {
+            auto conflicts = get_conflicts(rec_list._users, restrictions, network_id);
             if (rec_list._network_id == network_id &&
                 rec_list._type == type &&
                 ((layout.format != format::b_fs_yx_fsv32 && layout.format != format::b_fs_zyx_fsv32) ||
@@ -167,24 +250,39 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
                 layout.feature() <= rec_list._memory->get_layout().feature() &&
                 layout.batch() <= rec_list._memory->get_layout().batch() &&
                 rec_list._memory->get_layout().format != format::fs_b_yx_fsv32 &&
-                layout.format != format::fs_b_yx_fsv32 &&
-                !has_conflict(rec_list._users, restrictions, network_id)) {
-                rec_list._users.insert({id, network_id});
+                layout.format != format::fs_b_yx_fsv32 && conflicts.empty()) {
+                rec_list._users.insert({id, network_id, layout.bytes_count(), 0});
                 auto ret_mem = _engine->reinterpret_buffer(*(rec_list._memory), layout);
                 return ret_mem;
             }
         }
+
+        //TODO: temporary workround for insufficient memory by Renzhi
+        auto allocated_memory = _engine->get_used_device_memory(type);
+        if (type == allocation_type::usm_device &&
+            allocated_memory + layout.bytes_count() > _engine->get_device_info().max_global_mem_size) {
+            return nullptr;
+        }
+
         auto mem = alloc_memory(layout, type);
         first_level_cache->second.emplace_back(
-            memory_record({{id, network_id}}, mem, network_id, type));
+            memory_record({{id, network_id, layout.bytes_count(), 0}}, mem, network_id, type));
         return mem;
     }
     GPU_DEBUG_GET_INSTANCE(debug_config);
     GPU_DEBUG_IF(debug_config->verbose >= 2) {
-        GPU_DEBUG_COUT << "[" << id << ": output]" << std::endl;
+        GPU_DEBUG_COUT << "[padded, " << id << ": output]" << std::endl;
     }
+
+    //TODO: temporary workround for insufficient memory by Renzhi
+    auto allocated_memory = _engine->get_used_device_memory(type);
+    if (type == allocation_type::usm_device &&
+        allocated_memory + layout.bytes_count() > _engine->get_device_info().max_global_mem_size) {
+        return nullptr;
+    }
+
     auto mem = alloc_memory(layout, type);
-    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, type)};
+    std::list<memory_record> list = {memory_record({{id, network_id, layout.bytes_count(), 0}}, mem, network_id, type)};
     _padded_pool.emplace(layout, std::move(list));
     return mem;
 }
@@ -200,10 +298,11 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     auto it = _no_reusable_pool.lower_bound(layout.bytes_count());
 
     while (it != _no_reusable_pool.end()) {
+        auto conflicts = get_conflicts(it->second._users, {}, network_id);
         if (it->second._network_id != network_id &&
             it->second._type == type) {  // don't use non reusable resources within the same network
-            if (!has_conflict(it->second._users, {}, network_id)) {
-                it->second._users.insert(memory_user(id, network_id));
+            if (conflicts.empty()) {
+                it->second._users.insert(memory_user(id, network_id, layout.bytes_count(), 0));
                 auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout);
                 return ret_mem;
             }
@@ -213,7 +312,7 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _no_reusable_pool.emplace(layout.bytes_count(),
-                                  memory_record({{id, network_id}}, mem, network_id, type));
+                                  memory_record({{id, network_id, layout.bytes_count(), 0}}, mem, network_id, type));
     }
     return mem;
 }

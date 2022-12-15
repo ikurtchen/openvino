@@ -568,7 +568,8 @@ void program::pre_optimize_graph(bool is_internal) {
     // handle symmetric and asymmetric padding for input
     apply_opt_pass<handle_input_padding>();
 
-    processing_order.calculate_BFS_processing_order();  // this method makes sense only for OOOQ (out of order execution queue)
+    if (get_engine().configuration().queue_type == cldnn::queue_types::out_of_order)
+        processing_order.calculate_BFS_processing_order();  // this method makes sense only for OOOQ (out of order execution queue)
 
     apply_opt_pass<reverse_optional_nodes_outputs>();
 
@@ -790,7 +791,8 @@ void program::prepare_memory_dependencies() {
 
     apply_opt_pass<basic_memory_dependencies>();
     apply_opt_pass<skipped_branch_memory_dependencies>();
-    apply_opt_pass<oooq_memory_dependencies>();
+    if(get_engine().configuration().queue_type == cldnn::queue_types::out_of_order)
+        apply_opt_pass<oooq_memory_dependencies>();
 }
 
 std::string program::get_memory_dependencies_string() const {
