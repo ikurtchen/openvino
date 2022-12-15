@@ -17,6 +17,10 @@
 #include <utility>
 #include <set>
 
+#ifndef FILM_MEMORY_DEBUG
+#define FILM_MEMORY_DEBUG
+#endif
+
 namespace kernel_selector {
 class TuningCache;
 }  // namespace kernel_selector
@@ -327,7 +331,13 @@ private:
     ** Memory pool functions
     */
     void prepare_memory_dependencies();
+#ifdef FILM_MEMORY_DEBUG
+public:
+#endif
     std::string get_memory_dependencies_string() const;
+#ifdef FILM_MEMORY_DEBUG
+private:
+#endif
 
     /*
     ** Utilities

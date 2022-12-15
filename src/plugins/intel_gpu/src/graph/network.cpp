@@ -49,6 +49,10 @@
 #include <thread>
 #endif
 
+#ifndef FILM_MEMORY_DEBUG
+#define FILM_MEMORY_DEBUG
+#endif
+
 namespace cldnn {
 
 #ifdef GPU_DEBUG_CONFIG
@@ -329,6 +333,12 @@ network::network(program::ptr program, stream::ptr stream, bool is_internal, boo
     build_exec_order();
     validate_primitives();
     add_default_output_chains();
+#ifdef FILM_MEMORY_DEBUG
+    _memory_pool->dump_pool();
+    std::cout << "============ Start dump memory dependency ============" << std::endl;
+    std::cout << _program->get_memory_dependencies_string() << std::endl;
+    std::cout << "============ End dump memory dependency ============" << std::endl;
+#endif
 }
 
 network::network(engine& engine,

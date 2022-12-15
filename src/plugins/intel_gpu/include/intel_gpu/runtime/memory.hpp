@@ -15,6 +15,11 @@
 #include <oneapi/dnnl/dnnl.hpp>
 #endif
 
+#ifndef FILM_MEMORY_DEBUG
+#define FILM_MEMORY_DEBUG
+#endif
+
+
 namespace cldnn {
 
 class engine;
@@ -111,6 +116,28 @@ struct simple_attached_memory : memory {
 private:
     void* _pointer;
 };
+
+#ifdef FILM_MEMORY_DEBUG
+struct mock_memory : memory {
+    mock_memory(engine* engine, const layout& layout, allocation_type type, bool reused)
+        : memory(engine, layout, type, reused) {}
+
+    void* lock(const stream& /* stream */, mem_lock_type /* type */) override { return nullptr; }
+    void unlock(const stream& /* stream */) override {}
+    event::ptr fill(stream& /* stream */, unsigned char) override { return nullptr; }
+    event::ptr fill(stream& /* stream */) override { return nullptr; }
+    shared_mem_params get_internal_params() const override { return { shared_mem_type::shared_mem_empty, nullptr, nullptr, nullptr,
+#ifdef _WIN32
+        nullptr,
+#else
+        0,
+#endif
+        0}; };
+
+    event::ptr copy_from(stream& /* stream */, const memory& /* other */) override { return nullptr; };
+    event::ptr copy_from(stream& /* stream */, const void* /* host_ptr */) override { return nullptr; }
+};
+#endif
 
 template <class T, mem_lock_type lock_type = mem_lock_type::read_write>
 struct mem_lock {
