@@ -674,7 +674,7 @@ memory::ptr primitive_inst::allocate_output(engine& _engine, memory_pool& pool, 
                                !_engine.supports_allocation(allocation_type::usm_device);
     GPU_DEBUG_GET_INSTANCE(debug_config);
     const auto& lockable_mem_type = _engine.get_lockable_preferred_memory_allocation_type(layout.format.is_image_2d());
-    const auto& alloc_type = use_lockable_memory ? lockable_mem_type
+    auto alloc_type = use_lockable_memory ? lockable_mem_type
         : usm_device_allocatable ? allocation_type::usm_device : lockable_mem_type;
 
     if ((is_internal && (_node.can_be_optimized() || _node.is_type<generic_layer>())) || (memory_reuse_by_user == false)) {
@@ -704,14 +704,29 @@ memory::ptr primitive_inst::allocate_output(engine& _engine, memory_pool& pool, 
         GPU_DEBUG_IF(debug_config->verbose >= 2) {
             GPU_DEBUG_COUT << "[" << _node.id() << ": output]" << std::endl;
         }
+        auto allocated_memory = _engine.get_used_device_memory(alloc_type);
+        if (alloc_type == allocation_type::usm_device &&
+            allocated_memory + layout.bytes_count() > _engine.get_device_info().max_global_mem_size) {
+            alloc_type = allocation_type::usm_host;
+         }
         return _engine.allocate_memory(layout, alloc_type);
     } else {
-        return get_memory_from_pool(_engine,
+        auto mem = get_memory_from_pool(_engine,
                 layout,
                 _node.id(),
                 _node.get_memory_dependencies(),
                 alloc_type,
                 true);
+        if (mem == nullptr) {
+            auto changed_alloc_type = allocation_type::usm_host;
+            mem = get_memory_from_pool(_engine,
+                layout,
+                _node.id(),
+                _node.get_memory_dependencies(),
+                changed_alloc_type,
+                true);
+        }
+        return mem;
     }
 }
 

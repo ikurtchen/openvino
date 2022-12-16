@@ -12,6 +12,8 @@
 #include <set>
 #include <stdexcept>
 
+#include "intel_gpu/runtime/debug_configuration.hpp"
+
 // NOTE: Due to buggy scope transition of warnings we need to disable warning in place of use/instantation
 //       of some types (even though we already disabled them in scope of definition of these types).
 //       Moreover this warning is pretty much now only for annoyance: it is generated due to lack
@@ -133,7 +135,7 @@ memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type ty
     }
 }
 
-memory::ptr ocl_engine::reinterpret_buffer(const memory& memory, const layout& new_layout) {
+memory::ptr ocl_engine::reinterpret_buffer(const memory& memory, const layout& new_layout, const size_t offset) {
     OPENVINO_ASSERT(memory.get_engine() == this, "[GPU] trying to reinterpret buffer allocated by a different engine");
     OPENVINO_ASSERT(new_layout.format.is_image() == memory.get_layout().format.is_image(),
                     "[GPU] trying to reinterpret between image and non-image layouts. Current: ",
@@ -141,15 +143,21 @@ memory::ptr ocl_engine::reinterpret_buffer(const memory& memory, const layout& n
 
     try {
         if (new_layout.format.is_image_2d()) {
+           //image2d buffer do not support resuse with none-zeron offset.
+           assert(offset == 0);
            return std::make_shared<ocl::gpu_image2d>(this,
                                      new_layout,
                                      reinterpret_cast<const ocl::gpu_image2d&>(memory).get_buffer());
         } else if (memory_capabilities::is_usm_type(memory.get_allocation_type())) {
+            auto& mem = reinterpret_cast<const ocl::gpu_usm&>(memory).get_buffer();
+            cl::UsmMemory usm_mem(get_usm_helper(), mem.get() + offset);
             return std::make_shared<ocl::gpu_usm>(this,
                                      new_layout,
-                                     reinterpret_cast<const ocl::gpu_usm&>(memory).get_buffer(),
+                                     usm_mem,
                                      memory.get_allocation_type());
         } else {
+           //currently do not support reuse buffer with offset
+           assert(offset == 0);
            return std::make_shared<ocl::gpu_buffer>(this,
                                     new_layout,
                                     reinterpret_cast<const ocl::gpu_buffer&>(memory).get_buffer());
