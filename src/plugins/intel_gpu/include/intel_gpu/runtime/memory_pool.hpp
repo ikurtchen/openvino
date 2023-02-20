@@ -33,7 +33,7 @@ struct memory_user {
     size_t   _size;
 
     memory_user(primitive_id id, uint32_t network_id, size_t size, size_t offset = 0)
-        : _id(id), _network_id(network_id), _size(size), _offset(offset) {}
+        : _id(id), _network_id(network_id), _offset(offset), _size(size) {}
 
     friend std::ostream& operator<<(std::ostream& os, const memory_user& memory_user) {
         os << memory_user._id << "(" << memory_user._network_id << ", offset:" << memory_user._offset <<")";

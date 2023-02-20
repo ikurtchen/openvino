@@ -188,7 +188,7 @@ memory::ptr ocl_engine::reinterpret_buffer(const memory& memory, const layout& n
                                      reinterpret_cast<const ocl::gpu_image2d&>(memory).get_buffer());
         } else if (memory_capabilities::is_usm_type(memory.get_allocation_type())) {
             auto& mem = reinterpret_cast<const ocl::gpu_usm&>(memory).get_buffer();
-            cl::UsmMemory usm_mem(get_usm_helper(), mem.get() + offset);
+            cl::UsmMemory usm_mem(get_usm_helper(), (uint8_t*)mem.get() + offset);
             return std::make_shared<ocl::gpu_usm>(this,
                                      new_layout,
                                      usm_mem,

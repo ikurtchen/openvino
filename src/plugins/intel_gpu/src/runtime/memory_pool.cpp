@@ -162,7 +162,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
             //merge overlapped intervals
             sort(intervals.begin(), intervals.end());
             std::vector<std::vector<size_t>> res = {intervals[0]};
-            for (int i = 1; i < intervals.size(); i++) {
+            for (size_t i = 1; i < intervals.size(); i++) {
                 if (res.back()[1] >= intervals[i][0]) {
                     res.back()[1] = std::max(res.back()[1], intervals[i][1]);
                     continue;
@@ -174,7 +174,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
             std::vector<std::vector<size_t>> availables = {};
             if (res[0][0] > 0)
                 availables.push_back({res[0][0], 0 });
-            for (int i = 0; i < res.size() - 1; i++) {
+            for (size_t i = 0; i < res.size() - 1; i++) {
                 availables.push_back({res[i+1][0] - res[i][1], res[i][1]});
             }
             if (res.back()[1] < it->second._memory->get_layout().bytes_count()) {
@@ -183,7 +183,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
 
             sort(availables.begin(), availables.end());
 
-            size_t offset = 0; int i = 0;
+            size_t offset = 0; size_t i = 0;
             for (; i < availables.size(); i ++) {
                 if (availables[i][0] >= layout.bytes_count()) {
                     offset = availables[i][1];
