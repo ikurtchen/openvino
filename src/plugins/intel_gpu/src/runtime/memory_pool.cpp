@@ -123,6 +123,10 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
                                                   uint32_t network_id,
                                                   const std::set<primitive_id>& restrictions,
                                                   allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        std::cout << "changed allocation_type to: " << type << std::endl;
+    }
+
     auto it = _non_padded_pool.lower_bound(layout.bytes_count());
     while (it != _non_padded_pool.end()) {
         if (it->second._network_id == network_id &&
@@ -155,6 +159,10 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
                                               uint32_t network_id,
                                               const std::set<primitive_id>& restrictions,
                                               allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        std::cout << "changed allocation_type to: " << type << std::endl;
+    }
+
     auto first_level_cache = _padded_pool.find(layout);
 
     if (first_level_cache != _padded_pool.end()) {
@@ -198,6 +206,10 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
                                                        const primitive_id& id,
                                                        uint32_t network_id,
                                                        allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        std::cout << "changed allocation_type to: " << type << std::endl;
+    }
+
     auto it = _no_reusable_pool.lower_bound(layout.bytes_count());
 
     while (it != _no_reusable_pool.end()) {

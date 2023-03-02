@@ -161,6 +161,8 @@ public:
     /// @note engine is created for the first device returned by devices query
     static std::shared_ptr<cldnn::engine> create(engine_types engine_type, runtime_types runtime_type);
 
+    /// check if device memory is full and need to fall back to usm_host.
+    bool fall_back_usm_host_needed(const layout& layout, allocation_type& type);
 protected:
     /// Create engine for given @p device and @p configuration
     engine(const device::ptr device);
@@ -169,6 +171,8 @@ protected:
 
     std::map<allocation_type, std::atomic<uint64_t>> _memory_usage_map;
     std::map<allocation_type, std::atomic<uint64_t>> _peak_memory_usage_map;
+private:
+    int64_t _usm_host_fall_back_threshold = 500000000;
 };
 
 }  // namespace cldnn
