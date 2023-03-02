@@ -21,6 +21,7 @@ void program_helpers::merge_buffers(engine& engine,
                                     size_t begin_offset,
                                     size_t end_offset) {
     memory::ptr data_to_allocate = engine.allocate_memory(target_layout, false);
+    std::cout << "merge_buffers: allocate_memory(target_layout, false), size=" << target_layout.bytes_count() << std::endl;
     auto& stream = node.get_program().get_stream();
 
     for (size_t i = begin_offset; i < end_offset; i++) {

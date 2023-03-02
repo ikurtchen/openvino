@@ -22,6 +22,7 @@ memory::ptr attach_or_copy_data(network& network, memory::ptr mem) {
         return mem;
 
     memory::ptr result = engine.allocate_memory(mem->get_layout(), false);
+    std::cout << "attach_or_copy_data: allocate_memory(false), size=" << mem->get_layout().bytes_count() << std::endl;
     mem_lock<char, mem_lock_type::read> src(mem, network.get_stream());
     mem_lock<char, mem_lock_type::write> dst(result, network.get_stream());
     std::copy(src.begin(), src.end(), dst.begin());

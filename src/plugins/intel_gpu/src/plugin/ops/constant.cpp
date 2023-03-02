@@ -206,6 +206,7 @@ void createClDnnConstant(Program& p, const ngraph::Shape& constDims, const std::
             GPU_DEBUG_COUT << "[" << initialconstPrimID << ": constant]" << std::endl;
         }
         cldnn::memory::ptr mem = p.GetEngine().allocate_memory(constLayout, false);
+        std::cout << "createClDnnConstant: allocate_memory(layout, false), size=" << constLayout.bytes_count() << std::endl;
         auto& stream = p.GetEngine().get_program_stream();
         cldnn::mem_lock<char> lock{mem, stream};
         auto buf = lock.data();

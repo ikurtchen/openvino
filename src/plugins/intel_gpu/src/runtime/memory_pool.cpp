@@ -145,7 +145,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _non_padded_pool.emplace(layout.bytes_count(),
-                                 memory_record({{id, network_id}}, mem, network_id, type));
+                                 memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }
@@ -184,7 +184,7 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
         GPU_DEBUG_COUT << "[" << id << ": output]" << std::endl;
     }
     auto mem = alloc_memory(layout, type);
-    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, type)};
+    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type())};
     _padded_pool.emplace(layout, std::move(list));
     return mem;
 }
@@ -213,7 +213,7 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _no_reusable_pool.emplace(layout.bytes_count(),
-                                  memory_record({{id, network_id}}, mem, network_id, type));
+                                  memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }

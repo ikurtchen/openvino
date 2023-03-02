@@ -143,6 +143,24 @@ memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type ty
     OPENVINO_ASSERT(supports_allocation(type) || type == allocation_type::cl_mem,
                     "[GPU] Unsupported allocation type: ", type);
 
+    if (type == allocation_type::usm_device) {
+        uint64_t used_device_mem = get_used_device_memory(allocation_type::usm_device);
+        uint64_t used_host_mem = get_used_device_memory(allocation_type::usm_host);
+        int64_t available_device_mem = (int64_t)get_device_info().max_global_mem_size - (int64_t)used_device_mem;
+        int64_t threshold = 500000000;
+        auto target_size = layout.bytes_count();
+        std::cout << "layout:" << layout << std::endl;
+        std::cout << "used_device_mem=" << used_device_mem << ", available_device_mem="
+            << available_device_mem << ", target_size=" << target_size
+            << ", max_global_mem_size=" << get_device_info().max_global_mem_size
+            << ", used_host_mem=" << used_host_mem << std::endl;
+
+        if (available_device_mem - (int64_t)target_size < threshold) {
+            std::cout << "device mem reach limit, change to usm_host" << std::endl;
+            type = allocation_type::usm_host;
+        }
+    }
+
     try {
         memory::ptr res = nullptr;
         if (layout.format.is_image_2d()) {
