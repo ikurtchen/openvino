@@ -778,6 +778,7 @@ void program::transfer_memory_to_device() {
                 GPU_DEBUG_LOG << "[" << data_node.id() << ": constant]" << std::endl;
                 // Allocate and transfer memory
                 auto device_mem = mem.get_engine()->allocate_memory(data_node_layout, allocation_type::usm_device, false);
+                std::cout << "program::transfer_memory_to_device: allocate_memory(usm_device, false), size=" << data_node_layout.bytes_count() << std::endl;
                 device_mem->copy_from(get_stream(), mem);
                 data_node.attach_memory(device_mem);
                 GPU_DEBUG_LOG << "[" << data_node.id() << ": constant]" << std::endl;

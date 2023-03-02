@@ -1316,6 +1316,7 @@ void network::transfer_memory_to_device(std::shared_ptr<primitive_inst> instance
     if (alloc_type == allocation_type::usm_host || alloc_type == allocation_type::usm_shared) {
         // Allocate and transfer memory
         auto device_mem = inst_mem.get_engine()->allocate_memory(inst_mem.get_layout(), allocation_type::usm_device, false);
+        std::cout << "network::transfer_memory_to_device: allocate_memory(layout, usm_device, false), size=" << inst_mem.get_layout().bytes_count() << std::endl;
         device_mem->copy_from(get_stream(), inst_mem);
         GPU_DEBUG_LOG << "[" << node.id() << ": constant]" << std::endl;
         _memory_pool->release_memory(&inst_mem, node.id(), get_id());

@@ -196,8 +196,10 @@ Graph::variable_states_map Graph::AllocateVariablesMemories() {
         });
         std::vector<cldnn::network::VariableState::Ptr> memoryStates;
         memoryStates.reserve(orderedLayouts.size());
-        for (const auto& layout : orderedLayouts)
+        for (const auto& layout : orderedLayouts) {
             memoryStates.push_back(std::make_shared<cldnn::network::VariableState>(get_engine().allocate_memory(layout, false)));
+            std::cout << "Graph::AllocateVariablesMemories: allocate_memory(layout, false), size=" << layout.bytes_count() << std::endl;
+        }
         states.insert({memStateInfo.first, memoryStates });
     }
     return states;

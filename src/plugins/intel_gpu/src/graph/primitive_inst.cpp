@@ -642,6 +642,7 @@ memory::ptr primitive_inst::allocate_internal_buffer(size_t idx) {
     } else {
         alloc_type = engine.get_lockable_preferred_memory_allocation_type();
     }
+    std::cout << "allocate_internal_buffers: alloc_type=" << alloc_type << ", size=" << layout.bytes_count() << std::endl;
     return engine.allocate_memory(layout, alloc_type);
 }
 
@@ -715,6 +716,7 @@ event::ptr primitive_inst::update_weights() {
         } else {
             auto alloc_type = engine.get_preferred_memory_allocation_type();
             _impl_params->reordered_weights = engine.allocate_memory(expected_layout, alloc_type);
+            std::cout << "primitive_inst::update_weights: allocate_memory(expected_layout, " << alloc_type << "), size=" << expected_layout.bytes_count() << std::endl;
         }
 
         kernel_arguments_data args;
@@ -782,6 +784,7 @@ memory::ptr primitive_inst::allocate_output(engine& _engine, memory_pool& pool, 
 
     bool usm_device_allocatable = true;
     const auto& total_device_input_mem_size = std::accumulate(impl_params.input_layouts.begin(), impl_params.input_layouts.end(), (uint64_t)0, device_mem_acc);
+    std::cout << "total_device_input_mem_size=" << total_device_input_mem_size << "_engine.get_device_info().max_global_mem_size=" << _engine.get_device_info().max_global_mem_size << std::endl;
     if (total_device_input_mem_size > _engine.get_device_info().max_global_mem_size)
         usm_device_allocatable = false;
 
@@ -803,11 +806,24 @@ memory::ptr primitive_inst::allocate_output(engine& _engine, memory_pool& pool, 
                     : !usm_device_allocatable ? lockable_mem_type :
                       !_node.is_shape_infer_dep() ? allocation_type::usm_device : lockable_mem_type;
 
+    std::cout << "primitive_inst::allocate_output(), is_internal=" << is_internal
+        << ", _node.can_be_optimized()=" << _node.can_be_optimized()
+        << ", _node.is_type<generic_layer>()=" << _node.is_type<generic_layer>()
+        << ", memory_reuse_by_user=" << memory_reuse_by_user
+        << ", _node.is_output()=" << _node.is_output()
+        << ", usm_device_allocatable=" << usm_device_allocatable
+        << ", _node.is_type<input_layout>()=" << _node.is_type<input_layout>()
+        << ", _node.can_share_buffer()=" << _node.can_share_buffer()
+        << ", alloc_type=" << alloc_type
+        << ", bytes=" << layout.bytes_count() << std::endl;
     if ((is_internal && (_node.can_be_optimized() || _node.is_type<generic_layer>())) || (memory_reuse_by_user == false)) {
         GPU_DEBUG_LOG << "[" << _node.id() << ": output]" << std::endl;
         // Use usm_device memory for weights reordering
         if (is_internal && _node.is_type<generic_layer>() && _engine.supports_allocation(allocation_type::usm_device))
             alloc_type = allocation_type::usm_device;
+
+        std::cout << "1. [" << _node.id() << ": output], get_memory_from_pool(" << alloc_type << ")" << std::endl;
+
         return get_memory_from_pool(_engine,
                 layout,
                 _node.id(),
@@ -817,16 +833,31 @@ memory::ptr primitive_inst::allocate_output(engine& _engine, memory_pool& pool, 
     } else if (is_internal && _node.is_output() && _node.is_type<generic_layer>() &&
             _engine.supports_allocation(allocation_type::usm_device) && usm_device_allocatable) {
         GPU_DEBUG_LOG << "[" << _node.id() << ": output]" << std::endl;
+
+        std::cout << "2. [" << _node.id() << ": output], allocate_memory(usm_device)" << std::endl;
+
         return _engine.allocate_memory(layout, allocation_type::usm_device, false);
     } else if (is_internal && !_node.is_output() && _node.is_type<input_layout>()) {
         // Skip memory reset for input_layout primitives, since data will be copied from cldnn::data primitive
         // or just reuse primitive's memory
         GPU_DEBUG_LOG << "[" << _node.id() << ": constant]" << std::endl;
+
+        std::cout << "3. [" << _node.id() << ": constant], allocate_memory(" << alloc_type << ")" << std::endl;
+
         return _engine.allocate_memory(layout, alloc_type, false);
     } else if (is_internal || (!_node.can_share_buffer()) || _node.can_be_optimized() || _node.is_output()) {
         GPU_DEBUG_LOG << "[" << _node.id() << ": output]" << std::endl;
+
+        std::cout << "4. [" << _node.id() << ": output], allocate_memory(" << alloc_type << ")" << std::endl;
+
         return _engine.allocate_memory(layout, alloc_type);
     } else {
+        std::cout << "5. [" << _node.id() << ": output], get_memory_from_pool(" << alloc_type << ")" << std::endl;
+        std::cout << "layout.data_padding=" << layout.data_padding.lower_size() << ";"
+            << layout.data_padding.upper_size() << ";"
+            << layout.data_padding.filling_value()
+            << "is_padded=" << !(layout.data_padding == padding{{0, 0, 0, 0}, 0})
+            << ", layout.format=" << layout.format << std::endl;
         return get_memory_from_pool(_engine,
                 layout,
                 _node.id(),
