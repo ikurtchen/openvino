@@ -29,12 +29,18 @@ using memory_ptr = std::shared_ptr<memory>;
 struct memory_user {
     primitive_id _id;
     uint32_t _network_id;
+    layout _layout;
+    size_t _bytes_count;
+    allocation_type _type;
 
     memory_user(primitive_id id, uint32_t network_id)
         : _id(id), _network_id(network_id) {}
 
+    memory_user(primitive_id id, uint32_t network_id, layout l, size_t bytes, allocation_type type)
+        : _id(id), _network_id(network_id), _layout(l), _bytes_count(bytes), _type(type) {}
+
     friend std::ostream& operator<<(std::ostream& os, const memory_user& memory_user) {
-        os << memory_user._id << "(" << memory_user._network_id << ")";
+        os << memory_user._id << "(" << memory_user._network_id << ")" << ", count=" << memory_user._bytes_count << ", type:" << memory_user._type << ", shape: " << memory_user._layout.get_shape();
         return os;
     }
 };
@@ -125,6 +131,7 @@ public:
     void clear_pool();
     void clear_pool_for_network(uint32_t network_id);
     void release_memory(memory* memory, const primitive_id& id, uint32_t network_id);
+    void dump_pool();
 };
 
 }  // namespace cldnn

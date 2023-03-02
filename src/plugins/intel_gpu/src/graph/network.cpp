@@ -331,6 +331,11 @@ network::network(program::ptr program, const ExecutionConfig& config, stream::pt
     validate_primitives();
     add_default_output_chains();
 
+    _memory_pool->dump_pool();
+    std::cout << "============ Start dump memory dependency ============" << std::endl;
+    std::cout << _program->get_memory_dependencies_string() << std::endl;
+    std::cout << "============ End dump memory dependency ============" << std::endl;
+
     if (is_dynamic()) {
         GPU_DEBUG_DEFINE_MEM_LOGGER("dynamic_network_initialization");
         _in_mem_kernels_cache = std::unique_ptr<KernelsCache>(new KernelsCache(_in_mem_kernels_cache_capacity));

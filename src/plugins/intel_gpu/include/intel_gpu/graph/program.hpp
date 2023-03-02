@@ -331,8 +331,9 @@ private:
     ** Memory pool functions
     */
     void prepare_memory_dependencies();
+public:
     std::string get_memory_dependencies_string() const;
-
+private:
     /*
     ** Utilities
     */

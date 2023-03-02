@@ -62,7 +62,8 @@ void memory_pool::release_memory(memory* mem, const primitive_id& id, uint32_t n
             if (it->second._network_id == network_id &&
                 it->second._type == type &&
                 it->second._memory.get() == mem) {
-                auto user_it = it->second._users.find({ id, network_id });
+                //auto user_it = it->second._users.find({ id, network_id });
+                auto user_it = it->second._users.find({ id, network_id, _layout, _layout.bytes_count(), type });
 
                 // normally there should be only one entry
                 if (user_it != it->second._users.end()) {
@@ -91,7 +92,8 @@ void memory_pool::release_memory(memory* mem, const primitive_id& id, uint32_t n
                 if (list_itr->_memory.get() == mem &&
                     list_itr->_network_id == network_id &&
                     list_itr->_type == type) {
-                    auto user_it = list_itr->_users.find({ id, network_id });
+                    // auto user_it = list_itr->_users.find({ id, network_id });
+                    auto user_it = list_itr->_users.find({ id, network_id , _layout, _layout.bytes_count(), type});
 
                     // normally there should be only one entry
                     if (user_it != list_itr->_users.end()) {
@@ -130,7 +132,8 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
             ((layout.format != format::b_fs_yx_fsv32 && layout.format != format::b_fs_zyx_fsv32) ||
              (layout.feature() % 32 == 0)) &&
             !has_conflict(it->second._users, restrictions, network_id)) {
-            it->second._users.insert(memory_user(id, network_id));
+            // it->second._users.insert(memory_user(id, network_id));
+            it->second._users.insert(memory_user(id, network_id, layout, layout.bytes_count(), type));
             auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout);
             return ret_mem;
         } else {
@@ -142,7 +145,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _non_padded_pool.emplace(layout.bytes_count(),
-                                 memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
+                                 memory_record({{id, network_id, layout, layout.bytes_count(), type}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }
@@ -166,19 +169,23 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
                 rec_list._memory->get_layout().format != format::fs_b_yx_fsv32 &&
                 layout.format != format::fs_b_yx_fsv32 &&
                 !has_conflict(rec_list._users, restrictions, network_id)) {
-                rec_list._users.insert({id, network_id});
+                // rec_list._users.insert({id, network_id});
+                rec_list._users.insert({id, network_id, layout, layout.bytes_count(), type});
                 auto ret_mem = _engine->reinterpret_buffer(*(rec_list._memory), layout);
                 return ret_mem;
             }
         }
         auto mem = alloc_memory(layout, type);
+        // first_level_cache->second.emplace_back(
+        //     memory_record({{id, network_id}}, mem, network_id, type));
         first_level_cache->second.emplace_back(
-            memory_record({{id, network_id}}, mem, network_id, type));
+            memory_record({{id, network_id, layout, layout.bytes_count(), type}}, mem, network_id, type));
         return mem;
     }
     GPU_DEBUG_LOG << "[" << id << ": output]" << std::endl;
     auto mem = alloc_memory(layout, type);
-    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type())};
+    //std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type())};
+    std::list<memory_record> list = {memory_record({{id, network_id, layout, layout.bytes_count(), type}}, mem, network_id, mem->get_allocation_type())};
     _padded_pool.emplace(layout, std::move(list));
     return mem;
 }
@@ -197,7 +204,8 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
         if (it->second._network_id != network_id &&
             it->second._type == type) {  // don't use non reusable resources within the same network
             if (!has_conflict(it->second._users, {}, network_id)) {
-                it->second._users.insert(memory_user(id, network_id));
+                // it->second._users.insert(memory_user(id, network_id));
+                it->second._users.insert(memory_user(id, network_id, layout, layout.bytes_count(), type));
                 auto ret_mem = _engine->reinterpret_buffer(*it->second._memory, layout);
                 return ret_mem;
             }
@@ -206,8 +214,10 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     }
     auto mem = alloc_memory(layout, type);
     {
+        //_no_reusable_pool.emplace(layout.bytes_count(),
+        //                          memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
         _no_reusable_pool.emplace(layout.bytes_count(),
-                                  memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
+                                  memory_record({{id, network_id, layout, layout.bytes_count(), type}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }
@@ -299,4 +309,65 @@ void memory_pool::clear_pool_for_network(uint32_t network_id) {
 
 memory_pool::memory_pool(engine& engine) : _engine(&engine) { }
 
+void memory_pool::dump_pool() {
+
+    std::cout << "============ Start dump memory pool ============" << std::endl;
+    std::cout << "************ Start dump _non_padded_pool ************" << std::endl;
+    for (auto itr = _non_padded_pool.begin(); itr != _non_padded_pool.end(); itr++) {
+        std::cout << "size: " << itr->first << std::endl;
+        auto& record = itr->second;
+        std::cout << "  record:" << std::endl;
+        std::cout << "    network_id:" << record._network_id << std::endl;
+        std::cout << "    allocation_type:" << record._type << std::endl;
+        std::cout << "    memory:" << std::endl;
+        std::cout << "      size:" << record._memory->size() << std::endl;
+        std::cout << "      layout:" << record._memory->get_layout() << std::endl;
+        std::cout << "      type:" << record._memory->get_allocation_type() << std::endl;
+        std::cout << "    users:" << std::endl;
+        for (auto user_iter = record._users.begin(); user_iter != record._users.end(); user_iter++) {
+            std::cout << "      " << *user_iter << std::endl;
+        }
+    }
+    std::cout << "************ End dump _non_padded_pool ************" << std::endl;
+
+    std::cout << "************ Start dump _padded_pool ************" << std::endl;
+    for (auto itr = _padded_pool.begin(); itr != _padded_pool.end(); itr++) {
+        std::cout << "layout: " << itr->first << std::endl;
+        auto& record_list = itr->second;
+        for (auto record_iter = record_list.begin(); record_iter != record_list.end(); record_iter++) {
+            auto& record = *record_iter;
+            std::cout << "  record:" << std::endl;
+            std::cout << "    network_id:" << record._network_id << std::endl;
+            std::cout << "    allocation_type:" << record._type << std::endl;
+            std::cout << "    memory:" << std::endl;
+            std::cout << "      size:" << record._memory->size() << std::endl;
+            std::cout << "      layout:" << record._memory->get_layout() << std::endl;
+            std::cout << "      type:" << record._memory->get_allocation_type() << std::endl;
+            std::cout << "    users:" << std::endl;
+            for (auto user_iter = record._users.begin(); user_iter != record._users.end(); user_iter++) {
+                std::cout << "      " << *user_iter << std::endl;
+            }
+        }
+    }
+    std::cout << "************ End dump _padded_pool ************" << std::endl;
+
+    std::cout << "************ Start dump _non_reusable_pool ************" << std::endl;
+    for (auto itr = _no_reusable_pool.begin(); itr != _no_reusable_pool.end(); itr++) {
+        std::cout << "size: " << itr->first << std::endl;
+        auto& record = itr->second;
+        std::cout << "  record:" << std::endl;
+        std::cout << "    network_id:" << record._network_id << std::endl;
+        std::cout << "    allocation_type:" << record._type << std::endl;
+        std::cout << "    memory:" << std::endl;
+        std::cout << "      size:" << record._memory->size() << std::endl;
+        std::cout << "      layout:" << record._memory->get_layout() << std::endl;
+        std::cout << "      type:" << record._memory->get_allocation_type() << std::endl;
+        std::cout << "    users:" << std::endl;
+        for (auto user_iter = record._users.begin(); user_iter != record._users.end(); user_iter++) {
+            std::cout << "      " << *user_iter << std::endl;
+        }
+    }
+    std::cout << "************ End dump _no_reusable_pool ************" << std::endl;
+    std::cout << "============ End dump memory pool ============" << std::endl;
+}
 }  // namespace cldnn
