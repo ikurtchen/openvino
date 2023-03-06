@@ -57,7 +57,15 @@ static size_t get_cpu_ram_size() {
 namespace cldnn {
 
 engine::engine(const device::ptr device)
-    : _device(device) {}
+    : _device(device) {
+    if (const auto env_var = std::getenv("OV_GPU_USM_DEVICE_THRESHOLD")) {
+        int64_t val = std::atol(env_var);
+        if (val > 0 && val < (int64_t)device->get_info().max_global_mem_size) {
+            _usm_host_fall_back_threshold = val;
+        }
+    }
+    GPU_DEBUG_INFO << "_usm_host_fall_back_threshold=" << _usm_host_fall_back_threshold << std::endl;
+}
 
 device_info engine::get_device_info() const {
     return _device->get_info();
@@ -268,6 +276,32 @@ std::shared_ptr<cldnn::engine> engine::create(engine_types engine_type, runtime_
     auto& device = iter != devices.end() ? iter->second : devices.begin()->second;
 
     return engine::create(engine_type, runtime_type, device);
+}
+
+bool engine::fall_back_usm_host_needed(const layout& layout, allocation_type& type) {
+    bool ret = false;
+
+    if (type == allocation_type::usm_device) {
+        uint64_t used_device_mem = get_used_device_memory(allocation_type::usm_device);
+        uint64_t used_host_mem = get_used_device_memory(allocation_type::usm_host);
+
+        int64_t available_device_mem = (int64_t)get_device_info().max_global_mem_size - (int64_t)used_device_mem;
+
+        auto target_size = layout.bytes_count();
+        GPU_DEBUG_INFO << "layout:" << layout << std::endl;
+        GPU_DEBUG_INFO << "used_device_mem=" << used_device_mem << ", available_device_mem="
+            << available_device_mem << ", target_size=" << target_size
+            << ", max_global_mem_size=" << get_device_info().max_global_mem_size
+            << ", used_host_mem=" << used_host_mem << std::endl;
+
+        if (available_device_mem - (int64_t)target_size < _usm_host_fall_back_threshold) {
+            GPU_DEBUG_INFO << "device mem reach limit, change to usm_host" << std::endl;
+            type = allocation_type::usm_host;
+            ret = true;
+        }
+    }
+
+    return ret;
 }
 
 }  // namespace cldnn

@@ -144,6 +144,10 @@ memory::ptr ocl_engine::allocate_memory(const layout& layout, allocation_type ty
     OPENVINO_ASSERT(supports_allocation(type) || type == allocation_type::cl_mem,
                     "[GPU] Unsupported allocation type: ", type);
 
+    if (fall_back_usm_host_needed(layout, type)) {
+        GPU_DEBUG_INFO << "changed allocation_type to: " << type << std::endl;
+    }
+
     try {
         memory::ptr res = nullptr;
         if (layout.format.is_image_2d()) {

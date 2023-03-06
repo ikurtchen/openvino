@@ -121,6 +121,10 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
                                                   uint32_t network_id,
                                                   const std::set<primitive_id>& restrictions,
                                                   allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        GPU_DEBUG_LOG << id << "changed allocation_type to: " << type << std::endl;
+    }
+
     auto it = _non_padded_pool.lower_bound(layout.bytes_count());
     while (it != _non_padded_pool.end()) {
         if (it->second._network_id == network_id &&
@@ -142,7 +146,7 @@ memory::ptr memory_pool::get_from_non_padded_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _non_padded_pool.emplace(layout.bytes_count(),
-                                 memory_record({{id, network_id}}, mem, network_id, type));
+                                 memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }
@@ -152,6 +156,10 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
                                               uint32_t network_id,
                                               const std::set<primitive_id>& restrictions,
                                               allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        GPU_DEBUG_LOG << id << " changed allocation_type to: " << type << std::endl;
+    }
+
     auto first_level_cache = _padded_pool.find(layout);
 
     if (first_level_cache != _padded_pool.end()) {
@@ -178,7 +186,7 @@ memory::ptr memory_pool::get_from_padded_pool(const layout& layout,
     }
     GPU_DEBUG_LOG << "[" << id << ": output]" << std::endl;
     auto mem = alloc_memory(layout, type);
-    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, type)};
+    std::list<memory_record> list = {memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type())};
     _padded_pool.emplace(layout, std::move(list));
     return mem;
 }
@@ -191,6 +199,10 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
                                                        const primitive_id& id,
                                                        uint32_t network_id,
                                                        allocation_type type) {
+    if (_engine->fall_back_usm_host_needed(layout, type)) {
+        GPU_DEBUG_LOG << id << "changed allocation_type to: " << type << std::endl;
+    }
+
     auto it = _no_reusable_pool.lower_bound(layout.bytes_count());
 
     while (it != _no_reusable_pool.end()) {
@@ -207,7 +219,7 @@ memory::ptr memory_pool::get_from_across_networks_pool(const layout& layout,
     auto mem = alloc_memory(layout, type);
     {
         _no_reusable_pool.emplace(layout.bytes_count(),
-                                  memory_record({{id, network_id}}, mem, network_id, type));
+                                  memory_record({{id, network_id}}, mem, network_id, mem->get_allocation_type()));
     }
     return mem;
 }
